@@ -1,0 +1,91 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// --- SUBSTATION MODEL ---
+model Substation {
+  id        String   @id @default(uuid())
+  name      String   @unique // e.g., "Jigmeling", "Mangdechhu"
+  voltageKV Int
+  type      String   @default("Transmission")
+  
+  // Relations
+  users     User[]
+  
+  // Tracks trips where this station is either the "From" or "To" side
+  tripsFrom Trip[] @relation("FromStation")
+  tripsTo   Trip[] @relation("ToStation")
+}
+
+// --- STAFF / CREATOR MODEL ---
+model Creator {
+  id   String @id @default(uuid())
+  name String @unique
+}
+
+// --- USER MODEL ---
+model User {
+  id           String      @id @default(uuid())
+  username     String      @unique 
+  password     String      // Hashed
+  role         Role        @default(OPERATOR)
+  substationId String?
+  substation   Substation? @relation(fields: [substationId], references: [id])
+}
+
+// --- TRIP / INCIDENT MODEL ---
+model Trip {
+  id                  String   @id @default(uuid())
+  title               String   // e.g., "400 KV Jigmeling - Mangdechhu Line 1"
+  elementName         String   // e.g., "Jigmeling-Mangdechhu-1"
+  createdBy           String?  // Staff name who created the entry
+  elementType         String   @default("Transmission Line")
+  
+  // High Precision Time Tracking
+  trippingDateTime    DateTime
+  restorationDateTime DateTime? // Optional: filled when power is restored
+  
+  status              String   @default("OPENED") // OPENED, CLOSED
+  lastUpdated         DateTime @updatedAt
+
+  // Station "From" (Side A)
+  fromSubstationId String
+  fromSubstation   Substation @relation("FromStation", fields: [fromSubstationId], references: [id])
+  fromFIR          String?    // Filename for Fault Incident Report
+  fromDR           String?    // Filename for Disturbance Record
+  fromEL           String?    // Filename for Event Logger
+
+  // Station "To" (Side B)
+  toSubstationId   String
+  toSubstation     Substation @relation("ToStation", fields: [toSubstationId], references: [id])
+  toFIR            String?    
+  toDR             String?    
+  toEL             String?    
+}
+
+// --- LOOKUP FOR VOLTAGE LEVELS / LINES ---
+model Element {
+  id   String @id @default(uuid())
+  name String @unique
+}
+model AuditLog {
+  id        String   @id @default(uuid())
+  action    String   // e.g., "UPLOAD", "DELETE", "STATUS_CHANGE"
+  details   String   // e.g., "Uploaded fromFIR for incident: 400kV Line 1"
+  user      String   // The username of the person who performed the action
+  timestamp DateTime @default(now())
+}
+
+// --- ENUMS ---
+enum Role {
+  ADMIN    // BPSO Central / NLDC (Full Access)
+  OPERATOR // Station User (Upload Access)
+  VIEWER   // Read-only Access
+}
